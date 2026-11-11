@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import Foundation
 
@@ -212,26 +213,135 @@ public enum KittyLaunchMode: String, CaseIterable, Codable, Sendable, Identifiab
     }
 }
 
-public struct HotKeyDescriptor: Equatable, Codable, Sendable {
+public enum ModifierTapKey: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
+    case command
+    case option
+    case control
+    case shift
+
+    public var id: String { rawValue }
+
+    public var symbol: String {
+        switch self {
+        case .command: return "⌘"
+        case .option: return "⌥"
+        case .control: return "⌃"
+        case .shift: return "⇧"
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .command: return "Command"
+        case .option: return "Option"
+        case .control: return "Control"
+        case .shift: return "Shift"
+        }
+    }
+
+    public var modifierFlag: NSEvent.ModifierFlags {
+        switch self {
+        case .command: return .command
+        case .option: return .option
+        case .control: return .control
+        case .shift: return .shift
+        }
+    }
+}
+
+public enum HotKeyKind: String, Codable, Hashable, Sendable {
+    case keyCombo
+    case doubleTapModifier
+}
+
+public struct HotKeyDescriptor: Equatable, Hashable, Codable, Sendable {
+    public var kind: HotKeyKind
     public var keyCode: UInt32
     public var carbonModifiers: UInt32
+    public var doubleTapModifier: ModifierTapKey?
 
     public static let defaultLauncher = HotKeyDescriptor(
         keyCode: UInt32(kVK_Space),
         carbonModifiers: UInt32(optionKey)
     )
 
+    public static let doubleCommand = HotKeyDescriptor.doubleTap(.command)
+
+    public static func doubleTap(_ modifier: ModifierTapKey) -> HotKeyDescriptor {
+        HotKeyDescriptor(
+            kind: .doubleTapModifier,
+            keyCode: 0,
+            carbonModifiers: 0,
+            doubleTapModifier: modifier
+        )
+    }
+
     public init(keyCode: UInt32, carbonModifiers: UInt32) {
+        self.kind = .keyCombo
         self.keyCode = keyCode
         self.carbonModifiers = carbonModifiers
+        self.doubleTapModifier = nil
+    }
+
+    private init(
+        kind: HotKeyKind,
+        keyCode: UInt32,
+        carbonModifiers: UInt32,
+        doubleTapModifier: ModifierTapKey?
+    ) {
+        self.kind = kind
+        self.keyCode = keyCode
+        self.carbonModifiers = carbonModifiers
+        self.doubleTapModifier = doubleTapModifier
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case keyCode
+        case carbonModifiers
+        case doubleTapModifier
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedKind = try container.decodeIfPresent(HotKeyKind.self, forKey: .kind) ?? .keyCombo
+        let decodedKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .keyCode) ?? 0
+        let decodedModifiers = try container.decodeIfPresent(UInt32.self, forKey: .carbonModifiers) ?? 0
+        let decodedTapModifier = try container.decodeIfPresent(ModifierTapKey.self, forKey: .doubleTapModifier)
+
+        if decodedKind == .doubleTapModifier, let tap = decodedTapModifier {
+            self = .doubleTap(tap)
+        } else {
+            self = HotKeyDescriptor(keyCode: decodedKeyCode, carbonModifiers: decodedModifiers)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(keyCode, forKey: .keyCode)
+        try container.encode(carbonModifiers, forKey: .carbonModifiers)
+        try container.encodeIfPresent(doubleTapModifier, forKey: .doubleTapModifier)
     }
 
     public var displayString: String {
-        KeyCodeTranslator.format(keyCode: keyCode, carbonModifiers: carbonModifiers)
+        switch kind {
+        case .keyCombo:
+            return KeyCodeTranslator.format(keyCode: keyCode, carbonModifiers: carbonModifiers)
+        case .doubleTapModifier:
+            let symbol = doubleTapModifier?.symbol ?? "⌘"
+            return "\(symbol) \(symbol)"
+        }
     }
 
     public var displayTokens: [String] {
-        KeyCodeTranslator.tokens(keyCode: keyCode, carbonModifiers: carbonModifiers)
+        switch kind {
+        case .keyCombo:
+            return KeyCodeTranslator.tokens(keyCode: keyCode, carbonModifiers: carbonModifiers)
+        case .doubleTapModifier:
+            let symbol = doubleTapModifier?.symbol ?? "⌘"
+            return [symbol, symbol]
+        }
     }
 }
 

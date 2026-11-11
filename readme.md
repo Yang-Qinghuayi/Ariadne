@@ -8,8 +8,9 @@ A native macOS Spotlight-style launcher for VS Code projects with instant Kitty 
 
 ## 核心功能 / Features
 
-- **全局快捷键唤起（无需辅助功能权限）**
-  - 基于 Carbon `RegisterEventHotKey`，默认快捷键 `⌥ Space`（可在设置中自由录制或选择预设快捷键）。
+- **全局快捷键唤起（支持组合键与双击修饰键）**
+  - 默认快捷键 `⌥ Space`（基于 Carbon `RegisterEventHotKey`，无需辅助功能权限）。
+  - 支持绑定 **双击 Command（`⌘ ⌘`）**、双击 Option（`⌥ ⌥`）、双击 Control（`⌃ ⌃`）、双击 Shift（`⇧ ⇧`），可在设置中直接双击录制或点击预设切换（双击修饰键需授予“辅助功能”权限以避免 `⌘C`/`⌘V` 误触）。
 - **原生 Spotlight 悬浮面板**
   - 非激活悬浮毛玻璃窗口（`NSPanel` + `NSVisualEffectView`），支持全屏应用空间，支持中文输入法（IME 选词不误触关闭或提交）。
 - **完整发现 VS Code 所有项目**
