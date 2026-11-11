@@ -37,7 +37,7 @@ struct SearchFieldRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         context.coordinator.parent = self
-        if nsView.currentEditor()?.hasMarkedText == true {
+        if (nsView.currentEditor() as? NSTextView)?.hasMarkedText() == true {
             return
         }
         if nsView.stringValue != text {
