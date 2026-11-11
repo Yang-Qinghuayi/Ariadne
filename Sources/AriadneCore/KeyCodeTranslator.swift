@@ -42,7 +42,7 @@ public enum KeyCodeTranslator {
 
     public static func isModifierOnlyKeyCode(_ keyCode: UInt16) -> Bool {
         switch Int(keyCode) {
-        case kVK_Command, kVK_RightCommand,
+        case kVK_Command, 0x36, // Left & Right Command
              kVK_Shift, kVK_RightShift,
              kVK_Option, kVK_RightOption,
              kVK_Control, kVK_RightControl,
