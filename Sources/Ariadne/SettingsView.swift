@@ -35,7 +35,7 @@ struct SettingsView: View {
                 Label("Sources", systemImage: "folder.badge.gearshape")
             }
         }
-        .frame(width: 560, height: 430)
+        .frame(width: 560, height: 470)
     }
 }
 

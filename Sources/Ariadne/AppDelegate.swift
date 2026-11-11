@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
     private var openLauncherMenuItem: NSMenuItem?
+    private var accessibilityMenuItem: NSMenuItem?
     private var launchAtLoginMenuItem: NSMenuItem?
 
     private var settingsStore: AppSettingsStore!
@@ -169,6 +170,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(openItem)
         self.openLauncherMenuItem = openItem
 
+        let accessibilityItem = NSMenuItem(
+            title: "Grant Accessibility Permission…",
+            action: #selector(requestAccessibilityFromMenu),
+            keyEquivalent: ""
+        )
+        accessibilityItem.target = self
+        accessibilityItem.isHidden = true
+        menu.addItem(accessibilityItem)
+        self.accessibilityMenuItem = accessibilityItem
+
         let refreshItem = NSMenuItem(
             title: "Refresh Projects",
             action: #selector(refreshProjectsFromMenu),
@@ -216,7 +227,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateMenuTitles() {
         openLauncherMenuItem?.title = "Open Launcher (\(settingsStore.hotKey.displayString))"
+        let needsAccessibility = hotKeyManager.status == .needsAccessibilityPermission
+        accessibilityMenuItem?.isHidden = !needsAccessibility
+        accessibilityMenuItem?.title = "Grant Accessibility for \(settingsStore.hotKey.displayString)…"
         launchAtLoginMenuItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func requestAccessibilityFromMenu() {
+        hotKeyManager.requestAccessibilityPermission()
     }
 
     @objc private func showLauncherFromMenu() {

@@ -40,6 +40,37 @@ public enum KeyCodeTranslator {
         return mods.isEmpty ? key : "\(mods) \(key)"
     }
 
+    public static func modifierTapKey(for keyCode: UInt16) -> ModifierTapKey? {
+        switch Int(keyCode) {
+        case kVK_Command, 0x36:
+            return .command
+        case kVK_Option, kVK_RightOption:
+            return .option
+        case kVK_Control, kVK_RightControl:
+            return .control
+        case kVK_Shift, kVK_RightShift:
+            return .shift
+        default:
+            return nil
+        }
+    }
+
+    public static func singleModifierTapKey(from flags: NSEvent.ModifierFlags) -> ModifierTapKey? {
+        let relevant = flags.intersection([.command, .option, .control, .shift])
+        switch relevant {
+        case .command:
+            return .command
+        case .option:
+            return .option
+        case .control:
+            return .control
+        case .shift:
+            return .shift
+        default:
+            return nil
+        }
+    }
+
     public static func isModifierOnlyKeyCode(_ keyCode: UInt16) -> Bool {
         switch Int(keyCode) {
         case kVK_Command, 0x36, // Left & Right Command

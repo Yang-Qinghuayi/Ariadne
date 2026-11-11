@@ -7,11 +7,13 @@ import SwiftUI
 private final class ShortcutRecorderController: ObservableObject {
     @Published var isRecording = false
     @Published var liveModifierTokens: [String] = []
+    @Published var pendingDoubleTapModifier: ModifierTapKey?
     @Published var validationHint: String?
 
     private var keyDownMonitor: Any?
     private var flagsChangedMonitor: Any?
     private weak var hotKeyManager: GlobalHotKeyManager?
+    private let doubleTapDetector = DoubleTapModifierDetector(targetModifier: nil)
 
     func toggleRecording(
         hotKeyManager: GlobalHotKeyManager,
@@ -31,20 +33,45 @@ private final class ShortcutRecorderController: ObservableObject {
         stopRecording()
         self.hotKeyManager = hotKeyManager
         hotKeyManager.suspend()
+        doubleTapDetector.reset()
         isRecording = true
         liveModifierTokens = []
+        pendingDoubleTapModifier = nil
         validationHint = nil
 
         flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             guard let self, self.isRecording else { return event }
+
             let relevant = event.modifierFlags.intersection([.control, .option, .shift, .command])
             let carbon = KeyCodeTranslator.carbonModifiers(from: relevant)
             self.liveModifierTokens = KeyCodeTranslator.modifierTokens(carbonModifiers: carbon)
+
+            if let doubleTapped = self.doubleTapDetector.processFlagsChanged(
+                modifierFlags: event.modifierFlags,
+                timestamp: event.timestamp
+            ) {
+                let descriptor = HotKeyDescriptor.doubleTap(doubleTapped)
+                self.stopRecording(resumeHotKey: false)
+                onCaptured(descriptor)
+                return nil
+            }
+
+            if case .firstTapReleased(let mod, _) = self.doubleTapDetector.state {
+                self.pendingDoubleTapModifier = mod
+            } else if case .secondPressDown(let mod, _) = self.doubleTapDetector.state {
+                self.pendingDoubleTapModifier = mod
+            } else {
+                self.pendingDoubleTapModifier = nil
+            }
+
             return event
         }
 
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isRecording else { return event }
+
+            self.doubleTapDetector.processInterruptingEvent()
+            self.pendingDoubleTapModifier = nil
 
             let keyCode = UInt32(event.keyCode)
             let flags = event.modifierFlags.intersection([.control, .option, .shift, .command])
@@ -62,20 +89,20 @@ private final class ShortcutRecorderController: ObservableObject {
             let isFunctionKey = KeyCodeTranslator.isFunctionKeyCode(keyCode)
 
             guard hasPrimaryModifier || isFunctionKey else {
-                self.validationHint = "Include ⌘, ⌥, or ⌃ (or use F1–F20)"
+                self.validationHint = "Include ⌘, ⌥, or ⌃ (or double-tap ⌘ / ⌥ / ⌃ / ⇧)"
                 NSSound.beep()
                 return nil
             }
 
             let carbonMods = KeyCodeTranslator.carbonModifiers(from: flags)
             let descriptor = HotKeyDescriptor(keyCode: keyCode, carbonModifiers: carbonMods)
-            self.stopRecording()
+            self.stopRecording(resumeHotKey: false)
             onCaptured(descriptor)
             return nil
         }
     }
 
-    func stopRecording() {
+    func stopRecording(resumeHotKey: Bool = true) {
         if let monitor = keyDownMonitor {
             NSEvent.removeMonitor(monitor)
             keyDownMonitor = nil
@@ -84,9 +111,13 @@ private final class ShortcutRecorderController: ObservableObject {
             NSEvent.removeMonitor(monitor)
             flagsChangedMonitor = nil
         }
+        doubleTapDetector.reset()
         isRecording = false
         liveModifierTokens = []
-        hotKeyManager?.resume()
+        pendingDoubleTapModifier = nil
+        if resumeHotKey {
+            hotKeyManager?.resume()
+        }
     }
 
     deinit {
@@ -105,10 +136,11 @@ struct ShortcutRecorderView: View {
     @StateObject private var recorder = ShortcutRecorderController()
 
     private let presets: [(String, HotKeyDescriptor)] = [
-        ("⌥ Space", HotKeyDescriptor(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(optionKey))),
+        ("⌥ Space", .defaultLauncher),
+        ("⌘ ⌘", .doubleTap(.command)),
+        ("⌥ ⌥", .doubleTap(.option)),
         ("⌘⇧ Space", HotKeyDescriptor(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(cmdKey | shiftKey))),
-        ("⌃ Space", HotKeyDescriptor(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(controlKey))),
-        ("⌥ P", HotKeyDescriptor(keyCode: UInt32(kVK_ANSI_P), carbonModifiers: UInt32(optionKey)))
+        ("⌃ Space", HotKeyDescriptor(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(controlKey)))
     ]
 
     var body: some View {
@@ -117,7 +149,7 @@ struct ShortcutRecorderView: View {
                 Button {
                     recorder.toggleRecording(hotKeyManager: hotKeyManager) { captured in
                         settingsStore.hotKey = captured
-                        hotKeyManager.register(captured)
+                        hotKeyManager.resume(with: captured)
                     }
                 } label: {
                     HStack(spacing: 6) {
@@ -125,8 +157,11 @@ struct ShortcutRecorderView: View {
                             Circle()
                                 .fill(Color.red)
                                 .frame(width: 7, height: 7)
-                            if recorder.liveModifierTokens.isEmpty {
-                                Text("Press shortcut… (Esc to cancel)")
+                            if let pendingMod = recorder.pendingDoubleTapModifier {
+                                Text("Tap \(pendingMod.symbol) again for \(pendingMod.symbol) \(pendingMod.symbol)…")
+                                    .font(.system(size: 12.5, weight: .semibold))
+                            } else if recorder.liveModifierTokens.isEmpty {
+                                Text("Press shortcut or double-tap ⌘…")
                                     .font(.system(size: 12.5, weight: .medium))
                             } else {
                                 Text(recorder.liveModifierTokens.joined(separator: " ") + " …")
@@ -171,19 +206,44 @@ struct ShortcutRecorderView: View {
 
                 if settingsStore.hotKey != .defaultLauncher {
                     Button("Reset") {
-                        recorder.stopRecording()
+                        recorder.stopRecording(resumeHotKey: false)
                         settingsStore.resetHotKeyToDefault()
-                        hotKeyManager.register(.defaultLauncher)
+                        hotKeyManager.resume(with: .defaultLauncher)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
             }
 
+            if recorder.isRecording {
+                Text("Supports combos (e.g. ⌥ Space) or double-tapping a modifier (⌘ ⌘, ⌥ ⌥, ⌃ ⌃, ⇧ ⇧). Press Esc to cancel.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
             if let hint = recorder.validationHint {
                 Text(hint)
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
+            }
+
+            if hotKeyManager.status == .needsAccessibilityPermission {
+                HStack(spacing: 8) {
+                    Text("Double-tap modifier shortcuts need macOS Accessibility access to monitor keys across apps without interfering with ⌘C / ⌘V.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 4)
+                    Button("Grant Access…") {
+                        hotKeyManager.requestAccessibilityPermission()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.orange.opacity(0.1))
+                )
             }
 
             HStack(spacing: 6) {
@@ -193,9 +253,9 @@ struct ShortcutRecorderView: View {
 
                 ForEach(presets, id: \.0) { label, descriptor in
                     Button(label) {
-                        recorder.stopRecording()
+                        recorder.stopRecording(resumeHotKey: false)
                         settingsStore.hotKey = descriptor
-                        hotKeyManager.register(descriptor)
+                        hotKeyManager.resume(with: descriptor)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
@@ -219,6 +279,10 @@ struct ShortcutRecorderView: View {
             Label("Recording", systemImage: "record.circle")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.secondary)
+        case .needsAccessibilityPermission:
+            Label("Needs Accessibility", systemImage: "lock.shield")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.orange)
         case .failed:
             Label("Conflict — pick another", systemImage: "exclamationmark.triangle.fill")
                 .font(.system(size: 11.5, weight: .medium))

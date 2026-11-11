@@ -31,6 +31,7 @@ let package = Package(
             dependencies: ["AriadneCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("ApplicationServices"),
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("Carbon"),
                 .linkedFramework("ServiceManagement")
