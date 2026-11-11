@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    name: Build, Test & Package (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          if ! swift test 2>&1 | tee "$RUNNER_TEMP/test.log"; then
+            ERR_LINES="$(grep -E "error:|fatal error:|failed|XCTAssert|Test Case" "$RUNNER_TEMP/test.log" | head -n 25 || tail -n 25 "$RUNNER_TEMP/test.log")"
+            ERR_ESCAPED="${ERR_LINES//$'\n'/%0A}"
+            echo "::error title=swift test failed::$ERR_ESCAPED"
+            exit 1
+          fi
+
+      - name: Build Universal .app, .dmg & .zip
+        run: |
+          set -o pipefail
+          if ! ./scripts/package.sh --build "${{ github.run_number }}" 2>&1 | tee "$RUNNER_TEMP/pkg.log"; then
+            ERR_LINES="$(tail -n 30 "$RUNNER_TEMP/pkg.log")"
+            ERR_ESCAPED="${ERR_LINES//$'\n'/%0A}"
+            echo "::error title=package.sh failed::$ERR_ESCAPED"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Ariadne-macOS-${{ github.sha }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/checksums.txt
+          retention-days: 7

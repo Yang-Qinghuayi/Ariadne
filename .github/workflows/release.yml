@@ -1,0 +1,155 @@
+name: Release macOS App
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0 or latest)'
+        required: true
+        default: 'v0.1.0'
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package-and-release:
+    name: Package & Publish macOS Release
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine release metadata
+        id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          BASE_VERSION="$(cat VERSION | tr -d '[:space:]')"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            RELEASE_TAG="$INPUT_TAG"
+            if [[ "$RELEASE_TAG" == "latest" ]]; then
+              ARTIFACT_VERSION="${BASE_VERSION}-main.${SHORT_SHA}"
+              RELEASE_TITLE="Ariadne Latest (${BASE_VERSION} @ ${SHORT_SHA})"
+            else
+              ARTIFACT_VERSION="${RELEASE_TAG#v}"
+              RELEASE_TITLE="Ariadne ${RELEASE_TAG}"
+            fi
+            IS_PRERELEASE="${INPUT_PRERELEASE}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            ARTIFACT_VERSION="${RELEASE_TAG#v}"
+            RELEASE_TITLE="Ariadne ${RELEASE_TAG}"
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              IS_PRERELEASE="true"
+            else
+              IS_PRERELEASE="false"
+            fi
+          else
+            RELEASE_TAG="latest"
+            ARTIFACT_VERSION="${BASE_VERSION}-main.${SHORT_SHA}"
+            RELEASE_TITLE="Ariadne Latest (${BASE_VERSION} @ ${SHORT_SHA})"
+            IS_PRERELEASE="false"
+          fi
+
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "artifact_version=$ARTIFACT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_title=$RELEASE_TITLE" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Package Universal macOS App (.dmg & .zip)
+        run: |
+          ./scripts/package.sh \
+            --version "${{ steps.meta.outputs.artifact_version }}" \
+            --build "${{ github.run_number }}"
+
+      - name: Prepare release notes
+        run: |
+          cat > "$RUNNER_TEMP/release_notes.md" <<'EOF'
+          ## Ariadne for macOS (Universal: Apple Silicon + Intel)
+
+          Native Spotlight-style launcher for VS Code projects with direct Kitty terminal directory launch.
+
+          ### Highlights
+          - Global shortcut (`⌥ Space` by default, customizable in Settings)
+          - Native non-activating Spotlight-style floating search panel
+          - Discovers VS Code projects from `state.vscdb`, `workspaceStorage`, `storage.json`, Project Manager, and custom folders
+          - Keyboard-driven navigation: `↓` / `↑` select, `⏎` Open in VS Code, `⌘⏎` Open directory in Kitty, `⌥⏎` Open in both, `Tab` Actions menu, `⌘P` Pin
+
+          ### Installation
+          1. Download `Ariadne-*-macOS-universal.dmg` (recommended) or `.zip` below.
+          2. Drag **Ariadne.app** into `/Applications`.
+          3. **First launch (unsigned/ad-hoc build):** If macOS Gatekeeper warns on first launch, right-click `Ariadne.app` -> **Open**, or run:
+             ```bash
+             xattr -cr /Applications/Ariadne.app
+             ```
+
+          ### Checksums (SHA-256)
+          ```text
+          EOF
+          cat dist/checksums.txt >> "$RUNNER_TEMP/release_notes.md"
+          echo '```' >> "$RUNNER_TEMP/release_notes.md"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          RELEASE_TITLE: ${{ steps.meta.outputs.release_title }}
+          IS_PRERELEASE: ${{ steps.meta.outputs.is_prerelease }}
+        run: |
+          EXTRA_ARGS=()
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            EXTRA_ARGS+=(--prerelease)
+          fi
+
+          if [[ "$RELEASE_TAG" == "latest" ]]; then
+            HAS_TAGGED_RELEASE="$(gh release list --json tagName -q '.[] | select(.tagName | startswith("v")) | .tagName' | head -n 1 || true)"
+            if [[ -n "$HAS_TAGGED_RELEASE" ]]; then
+              EXTRA_ARGS+=(--latest=false)
+            fi
+            # Replace rolling 'latest' release so stale SHA assets don't accumulate
+            gh release delete "$RELEASE_TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
+            gh release create "$RELEASE_TAG" \
+              dist/*.dmg \
+              dist/*.zip \
+              dist/checksums.txt \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$RUNNER_TEMP/release_notes.md" \
+              "${EXTRA_ARGS[@]}"
+          else
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release upload "$RELEASE_TAG" dist/*.dmg dist/*.zip dist/checksums.txt --clobber
+              gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file "$RUNNER_TEMP/release_notes.md"
+            else
+              gh release create "$RELEASE_TAG" \
+                dist/*.dmg \
+                dist/*.zip \
+                dist/checksums.txt \
+                --target "$GITHUB_SHA" \
+                --title "$RELEASE_TITLE" \
+                --notes-file "$RUNNER_TEMP/release_notes.md" \
+                "${EXTRA_ARGS[@]}"
+            fi
+          fi
