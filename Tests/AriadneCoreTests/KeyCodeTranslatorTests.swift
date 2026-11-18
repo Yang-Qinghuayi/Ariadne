@@ -62,7 +62,8 @@ final class KeyCodeTranslatorTests: XCTestCase {
 
         let store = AppSettingsStore(defaults: defaults)
         XCTAssertEqual(store.hotKey, .defaultLauncher)
-        XCTAssertEqual(store.defaultEnterAction, .vscode)
+        XCTAssertEqual(store.defaultEnterAction, .editor)
+        XCTAssertEqual(store.editorApp, .zed)
         XCTAssertEqual(store.kittyLaunchMode, .newOSWindow)
 
         let customHotKey = HotKeyDescriptor(keyCode: UInt32(kVK_ANSI_K), carbonModifiers: UInt32(cmdKey | shiftKey))

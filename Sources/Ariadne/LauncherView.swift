@@ -178,10 +178,11 @@ struct LauncherView: View {
                             ProjectRowView(
                                 scored: item,
                                 index: index,
+                                editor: settingsStore.editorApp,
                                 isSelected: index == viewModel.selectedIndex,
                                 isHovered: hoveredProjectID == item.id,
-                                onOpenVSCode: {
-                                    viewModel.execute(action: .vscode, on: item.project)
+                                onOpenEditor: {
+                                    viewModel.execute(action: .editor, on: item.project)
                                 },
                                 onOpenKitty: {
                                     viewModel.execute(action: .kitty, on: item.project)
@@ -296,7 +297,7 @@ struct LauncherView: View {
                             Image(systemName: iconName(for: action))
                                 .frame(width: 18)
                                 .foregroundStyle(isSelected ? Color.white : Color.accentColor)
-                            Text(action.title)
+                            Text(action.title(for: settingsStore.editorApp))
                                 .font(.system(size: 13, weight: .medium))
                             Spacer()
                             if let shortcutHint = shortcutHint(for: action) {
@@ -354,8 +355,8 @@ struct LauncherView: View {
             Spacer()
 
             HStack(spacing: 12) {
-                ShortcutLegend(keys: "⏎", label: settingsStore.defaultEnterAction.actionType.shortLabel)
-                ShortcutLegend(keys: "⌘⏎", label: settingsStore.defaultEnterAction.commandReturnActionType.shortLabel)
+                ShortcutLegend(keys: "⏎", label: settingsStore.defaultEnterAction.actionType.shortLabel(for: settingsStore.editorApp))
+                ShortcutLegend(keys: "⌘⏎", label: settingsStore.defaultEnterAction.commandReturnActionType.shortLabel(for: settingsStore.editorApp))
                 ShortcutLegend(keys: "⌥⏎", label: "Both")
                 ShortcutLegend(keys: "⌘P", label: "Pin")
                 ShortcutLegend(keys: "Tab", label: "Actions")
@@ -379,7 +380,7 @@ struct LauncherView: View {
 
     private func iconName(for action: OpenActionType) -> String {
         switch action {
-        case .vscode:
+        case .editor:
             return "chevron.left.forwardslash.chevron.right"
         case .kitty:
             return "terminal.fill"
@@ -411,9 +412,10 @@ struct LauncherView: View {
 private struct ProjectRowView: View {
     let scored: ScoredProject
     let index: Int
+    let editor: EditorAppKind
     let isSelected: Bool
     let isHovered: Bool
-    let onOpenVSCode: () -> Void
+    let onOpenEditor: () -> Void
     let onOpenKitty: () -> Void
     let onOpenBoth: () -> Void
     let onTogglePin: () -> Void
@@ -478,11 +480,11 @@ private struct ProjectRowView: View {
                 HStack(spacing: 5) {
                     RowActionButton(
                         icon: "chevron.left.forwardslash.chevron.right",
-                        label: "VS Code",
+                        label: editor.shortName,
                         tint: .blue,
-                        action: onOpenVSCode
+                        action: onOpenEditor
                     )
-                    .help("Open in VS Code")
+                    .help("Open in \(editor.displayName)")
 
                     RowActionButton(
                         icon: "terminal.fill",
@@ -498,7 +500,7 @@ private struct ProjectRowView: View {
                         tint: .teal,
                         action: onOpenBoth
                     )
-                    .help("Open in both VS Code & Kitty (⌥⏎)")
+                    .help("Open in \(editor.shortName) & Kitty (⌥⏎)")
 
                     Button(action: onTogglePin) {
                         Image(systemName: project.isPinned ? "pin.slash" : "pin")

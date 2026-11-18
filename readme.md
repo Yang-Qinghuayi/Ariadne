@@ -1,8 +1,8 @@
 # Ariadne
 
-原生 macOS 聚焦搜索（Spotlight）风格开发项目快速启动器 —— 一键呼出所有 VS Code 项目，键盘快速筛选，用 **VS Code** 或 **Kitty** 直接打开对应项目目录。
+原生 macOS 聚焦搜索（Spotlight）风格开发项目快速启动器 —— 一键呼出所有 VS Code 项目，键盘快速筛选，用 **Zed / Cursor / VS Code / Windsurf** 或 **Kitty** 直接打开对应项目目录。
 
-A native macOS Spotlight-style launcher for VS Code projects with instant Kitty terminal directory launch.
+A native macOS Spotlight-style launcher for VS Code projects with configurable editor (Zed / Cursor / VS Code / Windsurf) and instant Kitty terminal directory launch.
 
 ---
 
@@ -19,12 +19,16 @@ A native macOS Spotlight-style launcher for VS Code projects with instant Kitty 
   - `storage.json`（旧版本兼容）
   - VS Code Project Manager 扩展（`projects.json`）
   - 支持开启 VS Code Insiders 与自定义扫描目录，并显示项目当前 Git 分支。
+- **编辑器可配置（Zed / Cursor / VS Code / Windsurf）**
+  - `⏎` 打开的编辑器可在设置中自由选择：**Zed（默认）**、Cursor、Visual Studio Code、Windsurf。
+  - 选择后若未检测到对应应用或命令，设置界面会以小字提醒（自动检测 `/Applications`、`~/Applications`、`~/.local/bin` 与 Homebrew 常见路径，也可自定义路径，逐编辑器保存）。
+  - Zed 不识别 `.code-workspace` 时自动改为打开解析后的项目目录。
 - **VS Code + Kitty 无缝联动**
   - `↓` / `↑`（或 `⌃N` / `⌃P`）选择项目
-  - `⏎`：用 **VS Code** 打开项目（可在设置修改为默认打开 Kitty 或两者同时打开）
+  - `⏎`：用所选编辑器（默认 **Zed**）打开项目（可在设置修改为默认打开 Kitty 或两者同时打开）
   - `⌘ ⏎`：用 **Kitty** 直接打开到对应项目目录（`.code-workspace` 自动解析到对应文件夹）
-  - `⌥ ⏎`：同时在 **VS Code** 和 **Kitty** 中打开
-  - `Tab` / `⌘K`：打开完整动作菜单（VS Code / Kitty / Both / 在 Finder 中显示 / 复制路径）
+  - `⌥ ⏎`：同时在所选编辑器和 **Kitty** 中打开
+  - `Tab` / `⌘K`：打开完整动作菜单（编辑器 / Kitty / Both / 在 Finder 中显示 / 复制路径）
   - `⌘P`：置顶 / 取消置顶常用项目
   - `⌘1`–`⌘9`：快速打开前 9 个项目
   - `⌘,`：打开设置界面

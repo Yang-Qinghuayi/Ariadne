@@ -18,15 +18,15 @@ public enum LaunchTarget: Equatable, Sendable {
 }
 
 public enum ProjectLaunchError: LocalizedError, Sendable {
-    case vsCodeNotFound
+    case editorNotFound(EditorAppKind)
     case kittyNotFound
     case directoryNotFound(String)
     case launchFailed(String)
 
     public var errorDescription: String? {
         switch self {
-        case .vsCodeNotFound:
-            return "Visual Studio Code was not found. Install VS Code or set its path in Settings."
+        case .editorNotFound(let editor):
+            return "\(editor.displayName) was not found. Install \(editor.displayName) or set its path in Settings."
         case .kittyNotFound:
             return "Kitty terminal was not found. Install Kitty or set its path in Settings."
         case .directoryNotFound(let path):
@@ -40,47 +40,65 @@ public enum ProjectLaunchError: LocalizedError, Sendable {
 public final class ProjectLauncher {
     private let fileManager: FileManager
     private let homeDirectoryURL: URL
+    private let applicationBundleLookup: (String) -> URL?
+    private let appSearchDirectories: [String]
+    private let cliSearchDirectories: [String]
 
     public init(
         fileManager: FileManager = .default,
-        homeDirectoryURL: URL? = nil
+        homeDirectoryURL: URL? = nil,
+        applicationBundleLookup: ((String) -> URL?)? = nil,
+        appSearchDirectories: [String]? = nil,
+        cliSearchDirectories: [String]? = nil
     ) {
+        let home = homeDirectoryURL ?? fileManager.homeDirectoryForCurrentUser
         self.fileManager = fileManager
-        self.homeDirectoryURL = homeDirectoryURL ?? fileManager.homeDirectoryForCurrentUser
+        self.homeDirectoryURL = home
+        self.applicationBundleLookup = applicationBundleLookup ?? { bundleID in
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        }
+        self.appSearchDirectories = appSearchDirectories ?? [
+            "/Applications",
+            home.appendingPathComponent("Applications").path
+        ]
+        self.cliSearchDirectories = cliSearchDirectories ?? [
+            home.appendingPathComponent(".local/bin").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin"
+        ]
     }
 
     // MARK: - Discovery
 
-    public func detectVSCodeTarget(customPath: String = "") -> LaunchTarget? {
+    public func detectEditorTarget(for editor: EditorAppKind, customPath: String = "") -> LaunchTarget? {
         if let custom = resolveCustomTarget(customPath) {
             return custom
         }
 
-        for bundleID in ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"] {
-            if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
+        for bundleID in editor.bundleIdentifiers {
+            if let appURL = applicationBundleLookup(bundleID),
                fileManager.fileExists(atPath: appURL.path)
             {
                 return .appBundle(appURL)
             }
         }
 
-        let appCandidates = [
-            "/Applications/Visual Studio Code.app",
-            homeDirectoryURL.appendingPathComponent("Applications/Visual Studio Code.app").path,
-            "/Applications/Visual Studio Code - Insiders.app",
-            homeDirectoryURL.appendingPathComponent("Applications/Visual Studio Code - Insiders.app").path
-        ]
-        for path in appCandidates where fileManager.fileExists(atPath: path) {
-            return .appBundle(URL(fileURLWithPath: path))
+        for directory in appSearchDirectories {
+            for bundleName in editor.appBundleNames {
+                let candidate = URL(fileURLWithPath: directory).appendingPathComponent(bundleName).path
+                if fileManager.fileExists(atPath: candidate) {
+                    return .appBundle(URL(fileURLWithPath: candidate))
+                }
+            }
         }
 
-        let cliCandidates = [
-            "/opt/homebrew/bin/code",
-            "/usr/local/bin/code",
-            "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-        ]
-        for path in cliCandidates where fileManager.isExecutableFile(atPath: path) {
-            return .cliExecutable(URL(fileURLWithPath: path))
+        for directory in cliSearchDirectories {
+            let candidate = URL(fileURLWithPath: directory)
+                .appendingPathComponent(editor.cliCommandName).path
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return .cliExecutable(URL(fileURLWithPath: candidate))
+            }
         }
 
         return nil
@@ -126,14 +144,15 @@ public final class ProjectLauncher {
     public func perform(
         action: OpenActionType,
         on project: Project,
-        customVSCodePath: String = "",
+        editor: EditorAppKind,
+        customEditorPath: String = "",
         customKittyPath: String = "",
         kittyMode: KittyLaunchMode = .newOSWindow,
         kittyRemoteSocket: String = ""
     ) async throws {
         switch action {
-        case .vscode:
-            try await openInVSCode(project: project, customPath: customVSCodePath)
+        case .editor:
+            try await openInEditor(project: project, editor: editor, customPath: customEditorPath)
         case .kitty:
             try await openInKitty(
                 project: project,
@@ -142,7 +161,7 @@ public final class ProjectLauncher {
                 remoteSocket: kittyRemoteSocket
             )
         case .both:
-            try await openInVSCode(project: project, customPath: customVSCodePath)
+            try await openInEditor(project: project, editor: editor, customPath: customEditorPath)
             try await openInKitty(
                 project: project,
                 customPath: customKittyPath,
@@ -157,17 +176,25 @@ public final class ProjectLauncher {
     }
 
     @MainActor
-    public func openInVSCode(project: Project, customPath: String = "") async throws {
-        guard let target = detectVSCodeTarget(customPath: customPath) else {
-            throw ProjectLaunchError.vsCodeNotFound
+    public func openInEditor(
+        project: Project,
+        editor: EditorAppKind,
+        customPath: String = ""
+    ) async throws {
+        guard let target = detectEditorTarget(for: editor, customPath: customPath) else {
+            throw ProjectLaunchError.editorNotFound(editor)
         }
 
-        let projectURL = URL(fileURLWithPath: project.path)
+        // Editors that cannot open `.code-workspace` files receive the resolved
+        // project directory instead (e.g. Zed).
+        let openPath = editor.understandsCodeWorkspaceFiles ? project.path : project.directoryPath
+        let openURL = URL(fileURLWithPath: openPath)
+
         switch target {
         case .appBundle(let appURL):
-            try await openURLsWithApp([projectURL], applicationURL: appURL)
+            try await openURLsWithApp([openURL], applicationURL: appURL)
         case .cliExecutable(let exeURL):
-            try runDetachedProcess(executable: exeURL, arguments: [project.path])
+            try runDetachedProcess(executable: exeURL, arguments: [openPath])
         }
     }
 
