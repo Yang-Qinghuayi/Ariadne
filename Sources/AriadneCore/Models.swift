@@ -102,8 +102,75 @@ public struct Project: Identifiable, Hashable, Sendable {
     }
 }
 
-public enum OpenActionType: String, CaseIterable, Codable, Sendable, Identifiable {
+public enum EditorAppKind: String, CaseIterable, Codable, Sendable, Identifiable {
+    case zed
+    case cursor
     case vscode
+    case windsurf
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .zed: return "Zed"
+        case .cursor: return "Cursor"
+        case .vscode: return "Visual Studio Code"
+        case .windsurf: return "Windsurf"
+        }
+    }
+
+    public var shortName: String {
+        switch self {
+        case .zed: return "Zed"
+        case .cursor: return "Cursor"
+        case .vscode: return "VS Code"
+        case .windsurf: return "Windsurf"
+        }
+    }
+
+    public var bundleIdentifiers: [String] {
+        switch self {
+        case .zed: return ["dev.zed.Zed", "dev.zed.Zed-Preview"]
+        case .cursor: return ["com.todesktop.230313mzl4w4u92"]
+        case .vscode: return ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"]
+        case .windsurf: return ["com.windsurf.editor", "com.exafunction.windsurf"]
+        }
+    }
+
+    public var appBundleNames: [String] {
+        switch self {
+        case .zed: return ["Zed.app", "Zed Preview.app"]
+        case .cursor: return ["Cursor.app"]
+        case .vscode: return ["Visual Studio Code.app", "Visual Studio Code - Insiders.app"]
+        case .windsurf: return ["Windsurf.app"]
+        }
+    }
+
+    public var cliCommandName: String {
+        switch self {
+        case .zed: return "zed"
+        case .cursor: return "cursor"
+        case .vscode: return "code"
+        case .windsurf: return "windsurf"
+        }
+    }
+
+    /// Whether the editor understands `.code-workspace` files (VS Code and its forks).
+    /// Editors like Zed should receive the resolved project directory instead.
+    public var understandsCodeWorkspaceFiles: Bool {
+        switch self {
+        case .vscode, .cursor, .windsurf: return true
+        case .zed: return false
+        }
+    }
+
+    public var missingInstallHint: String {
+        "\(displayName) was not detected. Install \(displayName) or make sure the `\(cliCommandName)` command is available."
+    }
+}
+
+public enum OpenActionType: String, CaseIterable, Codable, Sendable, Identifiable {
+    case editor
     case kitty
     case both
     case revealInFinder
@@ -111,14 +178,14 @@ public enum OpenActionType: String, CaseIterable, Codable, Sendable, Identifiabl
 
     public var id: String { rawValue }
 
-    public var title: String {
+    public func title(for editor: EditorAppKind) -> String {
         switch self {
-        case .vscode:
-            return "Open in VS Code"
+        case .editor:
+            return "Open in \(editor.displayName)"
         case .kitty:
             return "Open in Kitty"
         case .both:
-            return "Open in VS Code & Kitty"
+            return "Open in \(editor.shortName) & Kitty"
         case .revealInFinder:
             return "Reveal in Finder"
         case .copyPath:
@@ -126,10 +193,10 @@ public enum OpenActionType: String, CaseIterable, Codable, Sendable, Identifiabl
         }
     }
 
-    public var shortLabel: String {
+    public func shortLabel(for editor: EditorAppKind) -> String {
         switch self {
-        case .vscode:
-            return "VS Code"
+        case .editor:
+            return editor.shortName
         case .kitty:
             return "Kitty"
         case .both:
@@ -143,27 +210,34 @@ public enum OpenActionType: String, CaseIterable, Codable, Sendable, Identifiabl
 }
 
 public enum DefaultEnterAction: String, CaseIterable, Codable, Sendable, Identifiable {
-    case vscode
+    case editor
     case kitty
     case both
 
     public var id: String { rawValue }
 
-    public var title: String {
-        switch self {
-        case .vscode:
-            return "Open in VS Code"
-        case .kitty:
-            return "Open in Kitty"
-        case .both:
-            return "Open in VS Code & Kitty"
+    /// Accepts legacy raw values persisted by earlier versions ("vscode" etc.).
+    public init?(legacyRawValue: String) {
+        switch legacyRawValue {
+        case "vscode", "editor":
+            self = .editor
+        case "kitty":
+            self = .kitty
+        case "both":
+            self = .both
+        default:
+            return nil
         }
+    }
+
+    public func title(for editor: EditorAppKind) -> String {
+        actionType.title(for: editor)
     }
 
     public var actionType: OpenActionType {
         switch self {
-        case .vscode:
-            return .vscode
+        case .editor:
+            return .editor
         case .kitty:
             return .kitty
         case .both:
@@ -173,10 +247,10 @@ public enum DefaultEnterAction: String, CaseIterable, Codable, Sendable, Identif
 
     public var commandReturnActionType: OpenActionType {
         switch self {
-        case .vscode:
+        case .editor:
             return .kitty
         case .kitty:
-            return .vscode
+            return .editor
         case .both:
             return .kitty
         }

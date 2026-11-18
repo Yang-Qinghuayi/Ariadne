@@ -155,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             )
             image?.isTemplate = true
             button.image = image
-            button.toolTip = "Ariadne — VS Code & Kitty Project Launcher"
+            button.toolTip = "Ariadne — Project Launcher (Zed / Cursor / VS Code & Kitty)"
         }
 
         let menu = NSMenu()

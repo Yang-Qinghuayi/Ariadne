@@ -32,7 +32,7 @@ final class LauncherViewModel: ObservableObject {
     private var toastDismissTask: Task<Void, Never>?
 
     let availableMenuActions: [OpenActionType] = [
-        .vscode,
+        .editor,
         .kitty,
         .both,
         .revealInFinder,
@@ -197,7 +197,8 @@ final class LauncherViewModel: ObservableObject {
 
         settingsStore.recordOpened(projectPath: project.path)
 
-        let customVSCode = settingsStore.customVSCodePath
+        let editor = settingsStore.editorApp
+        let customEditor = settingsStore.customEditorPath(for: editor)
         let customKitty = settingsStore.customKittyPath
         let kittyMode = settingsStore.kittyLaunchMode
         let remoteSocket = settingsStore.kittyRemoteSocket
@@ -208,7 +209,8 @@ final class LauncherViewModel: ObservableObject {
                 try await self.launcher.perform(
                     action: action,
                     on: project,
-                    customVSCodePath: customVSCode,
+                    editor: editor,
+                    customEditorPath: customEditor,
                     customKittyPath: customKitty,
                     kittyMode: kittyMode,
                     kittyRemoteSocket: remoteSocket

@@ -13,7 +13,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsTab(
                 settingsStore: settingsStore,
-                hotKeyManager: hotKeyManager
+                hotKeyManager: hotKeyManager,
+                launcher: launcher
             )
             .tabItem {
                 Label("General", systemImage: "gearshape")
@@ -24,7 +25,7 @@ struct SettingsView: View {
                 launcher: launcher
             )
             .tabItem {
-                Label("VS Code & Kitty", systemImage: "terminal")
+                Label("Editor & Kitty", systemImage: "terminal")
             }
 
             SourcesSettingsTab(
@@ -44,6 +45,7 @@ struct SettingsView: View {
 private struct GeneralSettingsTab: View {
     @ObservedObject var settingsStore: AppSettingsStore
     @ObservedObject var hotKeyManager: GlobalHotKeyManager
+    let launcher: ProjectLauncher
 
     @State private var launchAtLoginEnabled = false
     @State private var loginItemError: String?
@@ -63,9 +65,17 @@ private struct GeneralSettingsTab: View {
             }
 
             Section("Behavior") {
+                Picker("Open With (Editor)", selection: $settingsStore.editorApp) {
+                    ForEach(EditorAppKind.allCases) { editor in
+                        Text(editor.displayName).tag(editor)
+                    }
+                }
+
+                editorAvailabilityHint
+
                 Picker("Default Enter (⏎) Action", selection: $settingsStore.defaultEnterAction) {
                     ForEach(DefaultEnterAction.allCases) { action in
-                        Text(action.title).tag(action)
+                        Text(action.title(for: settingsStore.editorApp)).tag(action)
                     }
                 }
 
@@ -74,11 +84,11 @@ private struct GeneralSettingsTab: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 16) {
-                        shortcutRow("⏎", settingsStore.defaultEnterAction.actionType.title)
-                        shortcutRow("⌘⏎", settingsStore.defaultEnterAction.commandReturnActionType.title)
+                        shortcutRow("⏎", settingsStore.defaultEnterAction.actionType.title(for: settingsStore.editorApp))
+                        shortcutRow("⌘⏎", settingsStore.defaultEnterAction.commandReturnActionType.title(for: settingsStore.editorApp))
                     }
                     HStack(spacing: 16) {
-                        shortcutRow("⌥⏎", "Open in VS Code & Kitty")
+                        shortcutRow("⌥⏎", "Open in \(settingsStore.editorApp.shortName) & Kitty")
                         shortcutRow("Tab / ⌘K", "All Actions Menu")
                     }
                     HStack(spacing: 16) {
@@ -134,6 +144,36 @@ private struct GeneralSettingsTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Small-font reminder shown under the editor picker when the chosen
+    /// editor app (or its CLI command) is not available on this Mac.
+    @ViewBuilder
+    private var editorAvailabilityHint: some View {
+        let editor = settingsStore.editorApp
+        let target = launcher.detectEditorTarget(
+            for: editor,
+            customPath: settingsStore.customEditorPath(for: editor)
+        )
+
+        if let target {
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark.circle.fill")
+                Text("Detected: \(target.displayPath)")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.green)
+        } else {
+            HStack(spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                Text(editor.missingInstallHint)
+                    .lineLimit(2)
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.orange)
+        }
+    }
+
     private var appVersionString: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -164,7 +204,7 @@ private struct GeneralSettingsTab: View {
     }
 }
 
-// MARK: - VS Code & Kitty Tab
+// MARK: - Editor & Kitty Tab
 
 private struct AppsSettingsTab: View {
     @ObservedObject var settingsStore: AppSettingsStore
@@ -172,28 +212,41 @@ private struct AppsSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Visual Studio Code") {
+            Section("Editor — \(settingsStore.editorApp.displayName)") {
                 appDetectionRow(
                     title: "Detected",
-                    target: launcher.detectVSCodeTarget(customPath: settingsStore.customVSCodePath)
+                    target: launcher.detectEditorTarget(
+                        for: settingsStore.editorApp,
+                        customPath: settingsStore.customEditorPath(for: settingsStore.editorApp)
+                    )
                 )
 
                 HStack {
-                    TextField("Auto-detect (/Applications/Visual Studio Code.app)", text: $settingsStore.customVSCodePath)
-                        .textFieldStyle(.roundedBorder)
+                    TextField(
+                        "Auto-detect (/Applications/\(settingsStore.editorApp.appBundleNames.first ?? ""))",
+                        text: Binding(
+                            get: { settingsStore.customEditorPath(for: settingsStore.editorApp) },
+                            set: { settingsStore.setCustomEditorPath($0, for: settingsStore.editorApp) }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
 
                     Button("Choose…") {
                         if let selected = chooseApplicationOrBinary(startingAt: "/Applications") {
-                            settingsStore.customVSCodePath = selected
+                            settingsStore.setCustomEditorPath(selected, for: settingsStore.editorApp)
                         }
                     }
 
-                    if !settingsStore.customVSCodePath.isEmpty {
+                    if !settingsStore.customEditorPath(for: settingsStore.editorApp).isEmpty {
                         Button("Clear") {
-                            settingsStore.customVSCodePath = ""
+                            settingsStore.setCustomEditorPath("", for: settingsStore.editorApp)
                         }
                     }
                 }
+
+                Text("Custom path is stored per editor — switch the editor in General → Open With.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
 
             Section("Kitty Terminal") {

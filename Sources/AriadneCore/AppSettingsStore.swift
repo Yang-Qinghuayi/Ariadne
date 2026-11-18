@@ -6,13 +6,15 @@ public final class AppSettingsStore: ObservableObject {
     private enum Keys {
         static let hotKey = "ariadne.hotKey"
         static let defaultEnterAction = "ariadne.defaultEnterAction"
+        static let editorApp = "ariadne.editorApp"
+        static let customEditorPaths = "ariadne.customEditorPaths"
+        static let legacyCustomVSCodePath = "ariadne.customVSCodePath"
         static let kittyLaunchMode = "ariadne.kittyLaunchMode"
         static let includeVSCode = "ariadne.includeVSCode"
         static let includeVSCodeInsiders = "ariadne.includeVSCodeInsiders"
         static let includeProjectManager = "ariadne.includeProjectManager"
         static let hideMissingProjects = "ariadne.hideMissingProjects"
         static let customScanDirectories = "ariadne.customScanDirectories"
-        static let customVSCodePath = "ariadne.customVSCodePath"
         static let customKittyPath = "ariadne.customKittyPath"
         static let kittyRemoteSocket = "ariadne.kittyRemoteSocket"
         static let pinnedPaths = "ariadne.pinnedPaths"
@@ -28,6 +30,16 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var defaultEnterAction: DefaultEnterAction {
         didSet { defaults.set(defaultEnterAction.rawValue, forKey: Keys.defaultEnterAction) }
+    }
+
+    /// The editor app opened by ⏎ / ⌘1–9 actions (Zed, Cursor, VS Code, Windsurf).
+    @Published public var editorApp: EditorAppKind {
+        didSet { defaults.set(editorApp.rawValue, forKey: Keys.editorApp) }
+    }
+
+    /// Optional custom app bundle / CLI paths keyed by `EditorAppKind.rawValue`.
+    @Published public var customEditorPaths: [String: String] {
+        didSet { defaults.set(customEditorPaths, forKey: Keys.customEditorPaths) }
     }
 
     @Published public var kittyLaunchMode: KittyLaunchMode {
@@ -52,10 +64,6 @@ public final class AppSettingsStore: ObservableObject {
 
     @Published public var customScanDirectories: [String] {
         didSet { defaults.set(customScanDirectories, forKey: Keys.customScanDirectories) }
-    }
-
-    @Published public var customVSCodePath: String {
-        didSet { defaults.set(customVSCodePath, forKey: Keys.customVSCodePath) }
     }
 
     @Published public var customKittyPath: String {
@@ -90,12 +98,29 @@ public final class AppSettingsStore: ObservableObject {
         }
 
         if let rawAction = defaults.string(forKey: Keys.defaultEnterAction),
-           let action = DefaultEnterAction(rawValue: rawAction)
+           let action = DefaultEnterAction(legacyRawValue: rawAction)
         {
             self.defaultEnterAction = action
         } else {
-            self.defaultEnterAction = .vscode
+            self.defaultEnterAction = .editor
         }
+
+        if let rawEditor = defaults.string(forKey: Keys.editorApp),
+           let editor = EditorAppKind(rawValue: rawEditor)
+        {
+            self.editorApp = editor
+        } else {
+            self.editorApp = .zed
+        }
+
+        var editorPaths = defaults.dictionary(forKey: Keys.customEditorPaths) as? [String: String] ?? [:]
+        if editorPaths[EditorAppKind.vscode.rawValue] == nil,
+           let legacyVSCodePath = defaults.string(forKey: Keys.legacyCustomVSCodePath),
+           !legacyVSCodePath.isEmpty
+        {
+            editorPaths[EditorAppKind.vscode.rawValue] = legacyVSCodePath
+        }
+        self.customEditorPaths = editorPaths
 
         if let rawKittyMode = defaults.string(forKey: Keys.kittyLaunchMode),
            let mode = KittyLaunchMode(rawValue: rawKittyMode)
@@ -110,7 +135,6 @@ public final class AppSettingsStore: ObservableObject {
         self.includeProjectManager = defaults.object(forKey: Keys.includeProjectManager) as? Bool ?? true
         self.hideMissingProjects = defaults.object(forKey: Keys.hideMissingProjects) as? Bool ?? true
         self.customScanDirectories = defaults.stringArray(forKey: Keys.customScanDirectories) ?? []
-        self.customVSCodePath = defaults.string(forKey: Keys.customVSCodePath) ?? ""
         self.customKittyPath = defaults.string(forKey: Keys.customKittyPath) ?? ""
         self.kittyRemoteSocket = defaults.string(forKey: Keys.kittyRemoteSocket) ?? ""
         self.pinnedPaths = Set(defaults.stringArray(forKey: Keys.pinnedPaths) ?? [])
@@ -144,6 +168,21 @@ public final class AppSettingsStore: ObservableObject {
         } else {
             pinnedPaths.insert(projectPath)
         }
+    }
+
+    public func customEditorPath(for editor: EditorAppKind) -> String {
+        customEditorPaths[editor.rawValue] ?? ""
+    }
+
+    public func setCustomEditorPath(_ path: String, for editor: EditorAppKind) {
+        var updated = customEditorPaths
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            updated.removeValue(forKey: editor.rawValue)
+        } else {
+            updated[editor.rawValue] = trimmed
+        }
+        customEditorPaths = updated
     }
 
     public func recordOpened(projectPath: String, at date: Date = Date()) {
