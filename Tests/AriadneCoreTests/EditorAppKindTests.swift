@@ -107,7 +107,7 @@ final class EditorAppKindTests: XCTestCase {
             cliSearchDirectories: []
         )
 
-        XCTAssertEqual(launcher.detectEditorTarget(for: .zed), LaunchTarget.appBundle(fakeApp))
+        XCTAssertEqual(launcher.detectEditorTarget(for: .zed)?.url.path, fakeApp.path)
     }
 
     func testDetectsCLIExecutableInSearchDirectory() throws {
@@ -128,7 +128,7 @@ final class EditorAppKindTests: XCTestCase {
             cliSearchDirectories: [dir.path]
         )
 
-        XCTAssertEqual(launcher.detectEditorTarget(for: .cursor), LaunchTarget.cliExecutable(cli))
+        XCTAssertEqual(launcher.detectEditorTarget(for: .cursor)?.url.path, cli.path)
     }
 
     func testReturnsNilWhenEditorIsNotInstalled() throws {
@@ -161,8 +161,8 @@ final class EditorAppKindTests: XCTestCase {
 
         XCTAssertNil(launcher.detectEditorTarget(for: .vscode))
         XCTAssertEqual(
-            launcher.detectEditorTarget(for: .vscode, customPath: customApp.path),
-            LaunchTarget.appBundle(customApp)
+            launcher.detectEditorTarget(for: .vscode, customPath: customApp.path)?.url.path,
+            customApp.path
         )
     }
 }

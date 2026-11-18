@@ -88,7 +88,9 @@ public final class ProjectLauncher {
             for bundleName in editor.appBundleNames {
                 let candidate = URL(fileURLWithPath: directory).appendingPathComponent(bundleName).path
                 if fileManager.fileExists(atPath: candidate) {
-                    return .appBundle(URL(fileURLWithPath: candidate))
+                    // `isDirectory: false` keeps the URL stable (no trailing slash)
+                    // regardless of filesystem state.
+                    return .appBundle(URL(fileURLWithPath: candidate, isDirectory: false))
                 }
             }
         }
@@ -97,7 +99,7 @@ public final class ProjectLauncher {
             let candidate = URL(fileURLWithPath: directory)
                 .appendingPathComponent(editor.cliCommandName).path
             if fileManager.isExecutableFile(atPath: candidate) {
-                return .cliExecutable(URL(fileURLWithPath: candidate))
+                return .cliExecutable(URL(fileURLWithPath: candidate, isDirectory: false))
             }
         }
 
@@ -361,7 +363,7 @@ public final class ProjectLauncher {
         let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let expanded = NSString(string: trimmed).expandingTildeInPath
-        let url = URL(fileURLWithPath: expanded)
+        let url = URL(fileURLWithPath: expanded, isDirectory: false)
         if expanded.hasSuffix(".app"), fileManager.fileExists(atPath: expanded) {
             return .appBundle(url)
         }
